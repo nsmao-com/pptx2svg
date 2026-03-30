@@ -113,7 +113,7 @@ def convert_pdf_to_svgs(pdf_path: Path, output_dir: Path) -> list[Path]:
     svg_files: list[Path] = []
 
     for page in range(1, page_count + 1):
-        output_prefix = output_dir / f"slide-{page:03d}"
+        svg_path = output_dir / f"slide-{page:03d}.svg"
         run_command(
             [
                 "pdftocairo",
@@ -123,15 +123,11 @@ def convert_pdf_to_svgs(pdf_path: Path, output_dir: Path) -> list[Path]:
                 "-l",
                 str(page),
                 str(pdf_path),
-                str(output_prefix),
+                str(svg_path),
             ]
         )
-        svg_path = output_prefix.with_suffix(".svg")
         if not svg_path.exists():
-            matches = sorted(output_dir.glob(f"{output_prefix.name}*.svg"))
-            if not matches:
-                raise ConversionError(f"Failed to generate SVG for page {page}.")
-            svg_path = matches[0]
+            raise ConversionError(f"Failed to generate SVG for page {page}.")
         svg_files.append(svg_path)
 
     return svg_files
@@ -180,3 +176,4 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
 def sanitize_filename(name: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._")
     return normalized or "source"
+
