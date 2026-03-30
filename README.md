@@ -43,7 +43,7 @@ docker build -t pptx2svg-api https://github.com/nsmao-com/pptx2svg.git
 运行：
 
 ```bash
-docker run --rm -p 8000:8000 pptx2svg-api
+docker run --rm -p 8321:8321 pptx2svg-api
 ```
 
 ## 自动发布 GHCR 镜像
@@ -62,7 +62,7 @@ ghcr.io/nsmao-com/pptx2svg:latest
 
 ```bash
 docker pull ghcr.io/nsmao-com/pptx2svg:latest
-docker run --rm -p 8000:8000 ghcr.io/nsmao-com/pptx2svg:latest
+docker run --rm -p 8321:8321 ghcr.io/nsmao-com/pptx2svg:latest
 ```
 
 如果第一次发布后镜像不是公开的，需要在 GitHub 的 `Packages` 页面把该容器包可见性改成 `public`。
@@ -71,13 +71,13 @@ docker run --rm -p 8000:8000 ghcr.io/nsmao-com/pptx2svg:latest
 
 ```bash
 docker build -t pptx2svg-api .
-docker run --rm -p 8000:8000 pptx2svg-api
+docker run --rm -p 8321:8321 pptx2svg-api
 ```
 
 ## curl 调用示例
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/convert/ppt-to-svg" \
+curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
   -H "Content-Type: application/json" \
   -d "{\"ppt_url\":\"https://example.com/demo.pptx\"}" \
   --output slides.zip
@@ -86,6 +86,8 @@ curl -X POST "http://127.0.0.1:8000/api/v1/convert/ppt-to-svg" \
 ## 环境变量
 
 - `WORK_ROOT`: 临时文件目录，默认 `/tmp/ppt-to-svg`
+- `APP_PORT`: 服务端口，默认 `8321`
 - `DOWNLOAD_TIMEOUT_SECONDS`: 下载超时秒数，默认 `120`
 - `COMMAND_TIMEOUT_SECONDS`: 转换命令超时秒数，默认 `240`
 - `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
+

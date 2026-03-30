@@ -39,7 +39,7 @@
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8321
 ```
 
 ## Docker
@@ -53,13 +53,13 @@ docker build -t ppt-to-svg-api .
 运行容器：
 
 ```bash
-docker run --rm -p 8000:8000 ppt-to-svg-api
+docker run --rm -p 8321:8321 ppt-to-svg-api
 ```
 
 ## 调用示例
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/convert/ppt-to-svg" \
+curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
   -H "Content-Type: application/json" \
   -d "{\"ppt_url\":\"https://example.com/demo.pptx\"}" \
   --output slides.zip
@@ -68,6 +68,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/convert/ppt-to-svg" \
 ## 环境变量
 
 - `WORK_ROOT`: 临时文件目录，默认 `/tmp/ppt-to-svg`
+- `APP_PORT`: 服务端口，默认 `8321`
 - `DOWNLOAD_TIMEOUT_SECONDS`: 下载超时，默认 `120`
 - `COMMAND_TIMEOUT_SECONDS`: 转换命令超时，默认 `240`
 - `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
@@ -77,3 +78,4 @@ curl -X POST "http://127.0.0.1:8000/api/v1/convert/ppt-to-svg" \
 - 容器镜像体积会比较大，主要来自 `LibreOffice`
 - 某些复杂动画、特效、字体在 SVG 中可能会有样式损失
 - 当前实现返回 ZIP，适合直接下载或让上游服务继续处理
+

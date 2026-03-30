@@ -3,6 +3,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     WORK_ROOT=/tmp/ppt-to-svg \
+    APP_PORT=8321 \
     DOWNLOAD_TIMEOUT_SECONDS=120 \
     COMMAND_TIMEOUT_SECONDS=240 \
     MAX_DOWNLOAD_MB=100
@@ -22,6 +23,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY python_api/app ./app
 
-EXPOSE 8000
+EXPOSE 8321
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT}"]
