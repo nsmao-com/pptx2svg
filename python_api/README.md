@@ -104,3 +104,9 @@ docker run -d --name pptx2svg -p 8321:8321 -v /opt/pptx2svg/fonts:/usr/local/sha
 - 转 PDF 前会通过 UNO 遍历文本段落，关闭 LibreOffice Asian Typography 的字符间距扩张
 - 这主要用于缓解中文与数字/英文混排时被额外撑宽而换行的问题
 
+
+## LibreOffice 版本策略
+
+- 镜像已从 Debian 仓库版切换为官方 LibreOffice Fresh 26.2.1
+- 这样做是为了尽量吸收较新的 PPTX 导入与形状兼容修复，尤其是组合图形、连接线和局部错位问题
+

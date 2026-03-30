@@ -17,8 +17,6 @@ import httpx
 from .config import settings
 
 SUPPORTED_EXTENSIONS = {".ppt", ".pptx"}
-DEPENDENCIES = ("soffice", "pdfinfo", "pdftocairo")
-UNO_PYTHON = Path("/usr/bin/python3")
 UNO_EXPORT_SCRIPT = Path(__file__).with_name("libreoffice_pdf_export.py")
 
 
@@ -26,12 +24,36 @@ class ConversionError(RuntimeError):
     pass
 
 
+def get_soffice_binary() -> Path:
+    candidate = settings.libreoffice_program_dir / "soffice"
+    if candidate.exists():
+        return candidate
+
+    fallback = shutil.which("soffice")
+    if fallback:
+        return Path(fallback)
+
+    raise ConversionError("Missing LibreOffice soffice executable.")
+
+
+def get_uno_python_binary() -> Path:
+    bundled_python = settings.libreoffice_program_dir / "python"
+    if bundled_python.exists():
+        return bundled_python
+
+    system_python = Path("/usr/bin/python3")
+    if system_python.exists():
+        return system_python
+
+    raise ConversionError("Missing LibreOffice UNO python runtime.")
+
+
 def ensure_dependencies() -> None:
-    missing = [command for command in DEPENDENCIES if shutil.which(command) is None]
+    missing = [command for command in ("pdfinfo", "pdftocairo") if shutil.which(command) is None]
     if missing:
         raise ConversionError(f"Missing system dependencies: {', '.join(missing)}")
-    if not UNO_PYTHON.exists():
-        raise ConversionError("Missing LibreOffice UNO python runtime: /usr/bin/python3")
+    get_soffice_binary()
+    get_uno_python_binary()
     if not UNO_EXPORT_SCRIPT.exists():
         raise ConversionError("Missing LibreOffice export helper script.")
 
@@ -101,6 +123,8 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
 
 
 def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path) -> Path:
+    soffice_binary = get_soffice_binary()
+    uno_python = get_uno_python_binary()
     pdf_path = output_dir / f"{input_path.stem}.pdf"
     listener_port = reserve_tcp_port()
     listener_log_path = output_dir / "libreoffice-listener.log"
@@ -108,7 +132,7 @@ def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path)
     with listener_log_path.open("w+", encoding="utf-8") as log_file:
         listener_process = subprocess.Popen(
             [
-                "soffice",
+                str(soffice_binary),
                 f"-env:UserInstallation={office_profile_dir.resolve().as_uri()}",
                 "--headless",
                 "--nologo",
@@ -125,7 +149,7 @@ def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path)
         try:
             result = run_command(
                 [
-                    str(UNO_PYTHON),
+                    str(uno_python),
                     str(UNO_EXPORT_SCRIPT),
                     "--host",
                     "127.0.0.1",
@@ -142,13 +166,19 @@ def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path)
         except ConversionError as exc:
             listener_output = read_text_file(listener_log_path)
             if listener_output:
-                raise ConversionError(f"{exc} LibreOffice listener output: {listener_output}") from exc
+                raise ConversionError(
+                    f"{exc} LibreOffice listener output: {listener_output}"
+                ) from exc
             raise
         finally:
             terminate_process(listener_process)
 
     if not pdf_path.exists():
-        details = result.stdout.strip() if result.stdout else "LibreOffice did not generate a PDF file."
+        details = (
+            result.stdout.strip()
+            if result.stdout
+            else "LibreOffice did not generate a PDF file."
+        )
         raise ConversionError(details)
     return pdf_path
 

@@ -16,6 +16,9 @@ class Settings:
     libreoffice_start_timeout_seconds: int = int(
         os.getenv("LIBREOFFICE_START_TIMEOUT_SECONDS", "45")
     )
+    libreoffice_program_dir: Path = Path(
+        os.getenv("LIBREOFFICE_PROGRAM_DIR", "/opt/libreoffice26.2/program")
+    )
 
     @property
     def max_download_bytes(self) -> int:
