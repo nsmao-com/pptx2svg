@@ -73,6 +73,7 @@ curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
 - `COMMAND_TIMEOUT_SECONDS`: 转换命令超时，默认 `240`
 - `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
 - `PAGE_CONVERT_WORKERS`: PDF 按页转 SVG 的并发数，默认 `4`
+- `LIBREOFFICE_START_TIMEOUT_SECONDS`: UNO 导出连接 LibreOffice 的启动等待秒数，默认 `45`
 
 ## 注意事项
 
@@ -97,3 +98,9 @@ docker run -d --name pptx2svg -p 8321:8321 -v /opt/pptx2svg/fonts:/usr/local/sha
 ```
 
 容器启动时会自动刷新字体缓存。
+
+## 混排换行修正
+
+- 转 PDF 前会通过 UNO 遍历文本段落，关闭 LibreOffice Asian Typography 的字符间距扩张
+- 这主要用于缓解中文与数字/英文混排时被额外撑宽而换行的问题
+

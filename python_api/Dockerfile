@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-arphic-uming \
     fonts-liberation2 \
     fontconfig \
+    python3-uno \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -39,3 +40,5 @@ EXPOSE 8321
 
 ENTRYPOINT ["/usr/local/bin/pptx2svg-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8321"]
+
+

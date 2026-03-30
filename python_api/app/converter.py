@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 import shutil
+import socket
 import subprocess
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,8 @@ from .config import settings
 
 SUPPORTED_EXTENSIONS = {".ppt", ".pptx"}
 DEPENDENCIES = ("soffice", "pdfinfo", "pdftocairo")
+UNO_PYTHON = Path("/usr/bin/python3")
+UNO_EXPORT_SCRIPT = Path(__file__).with_name("libreoffice_pdf_export.py")
 
 
 class ConversionError(RuntimeError):
@@ -27,6 +30,10 @@ def ensure_dependencies() -> None:
     missing = [command for command in DEPENDENCIES if shutil.which(command) is None]
     if missing:
         raise ConversionError(f"Missing system dependencies: {', '.join(missing)}")
+    if not UNO_PYTHON.exists():
+        raise ConversionError("Missing LibreOffice UNO python runtime: /usr/bin/python3")
+    if not UNO_EXPORT_SCRIPT.exists():
+        raise ConversionError("Missing LibreOffice export helper script.")
 
 
 def convert_ppt_url_to_svg_zip(source_url: str) -> tuple[str, bytes]:
@@ -94,21 +101,55 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
 
 
 def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path) -> Path:
-    run_command(
-        [
-            "soffice",
-            f"-env:UserInstallation={office_profile_dir.resolve().as_uri()}",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(output_dir),
-            str(input_path),
-        ]
-    )
     pdf_path = output_dir / f"{input_path.stem}.pdf"
+    listener_port = reserve_tcp_port()
+    listener_log_path = output_dir / "libreoffice-listener.log"
+
+    with listener_log_path.open("w+", encoding="utf-8") as log_file:
+        listener_process = subprocess.Popen(
+            [
+                "soffice",
+                f"-env:UserInstallation={office_profile_dir.resolve().as_uri()}",
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nofirststartwizard",
+                "--norestore",
+                "--invisible",
+                f"--accept=socket,host=127.0.0.1,port={listener_port};urp;",
+            ],
+            stdout=log_file,
+            stderr=log_file,
+            text=True,
+        )
+        try:
+            result = run_command(
+                [
+                    str(UNO_PYTHON),
+                    str(UNO_EXPORT_SCRIPT),
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(listener_port),
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(pdf_path),
+                    "--timeout",
+                    str(settings.libreoffice_start_timeout_seconds),
+                ]
+            )
+        except ConversionError as exc:
+            listener_output = read_text_file(listener_log_path)
+            if listener_output:
+                raise ConversionError(f"{exc} LibreOffice listener output: {listener_output}") from exc
+            raise
+        finally:
+            terminate_process(listener_process)
+
     if not pdf_path.exists():
-        raise ConversionError("LibreOffice did not generate a PDF file.")
+        details = result.stdout.strip() if result.stdout else "LibreOffice did not generate a PDF file."
+        raise ConversionError(details)
     return pdf_path
 
 
@@ -184,6 +225,31 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
         details = stderr or stdout or "No command output."
         raise ConversionError(f"Command failed: {' '.join(command)}. {details}") from exc
     return result
+
+
+def reserve_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return sock.getsockname()[1]
+
+
+def terminate_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
 
 
 def sanitize_filename(name: str) -> str:
