@@ -72,10 +72,18 @@ curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
 - `DOWNLOAD_TIMEOUT_SECONDS`: 下载超时，默认 `120`
 - `COMMAND_TIMEOUT_SECONDS`: 转换命令超时，默认 `240`
 - `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
+- `PAGE_CONVERT_WORKERS`: PDF 按页转 SVG 的并发数，默认 `4`
 
 ## 注意事项
 
 - 容器镜像体积会比较大，主要来自 `LibreOffice`
 - 某些复杂动画、特效、字体在 SVG 中可能会有样式损失
 - 当前实现返回 ZIP，适合直接下载或让上游服务继续处理
+
+
+## 字体优化
+
+- 构建镜像前，可把常用 .ttf / .ttc 字体放到 [fonts](./fonts)
+- 镜像内已增加常见中文字体包和 Windows 常见字体的替代映射
+- 如果 PPT 使用了特殊商用字体，仍建议把原字体文件放进 [fonts](./fonts) 后重新构建
 

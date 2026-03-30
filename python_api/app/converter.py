@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
@@ -37,10 +38,12 @@ def convert_ppt_url_to_svg_zip(source_url: str) -> tuple[str, bytes]:
         input_path = download_presentation(source_url, temp_path)
         pdf_dir = temp_path / "pdf"
         svg_dir = temp_path / "svg"
+        office_profile_dir = temp_path / "lo-profile"
         pdf_dir.mkdir(parents=True, exist_ok=True)
         svg_dir.mkdir(parents=True, exist_ok=True)
+        office_profile_dir.mkdir(parents=True, exist_ok=True)
 
-        pdf_path = convert_to_pdf(input_path, pdf_dir)
+        pdf_path = convert_to_pdf(input_path, pdf_dir, office_profile_dir)
         svg_files = convert_pdf_to_svgs(pdf_path, svg_dir)
         archive_name = f"{input_path.stem}.zip"
         archive_bytes = build_zip_bytes(svg_files)
@@ -90,10 +93,11 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
     return target_path
 
 
-def convert_to_pdf(input_path: Path, output_dir: Path) -> Path:
+def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path) -> Path:
     run_command(
         [
             "soffice",
+            f"-env:UserInstallation={office_profile_dir.resolve().as_uri()}",
             "--headless",
             "--convert-to",
             "pdf",
@@ -110,27 +114,36 @@ def convert_to_pdf(input_path: Path, output_dir: Path) -> Path:
 
 def convert_pdf_to_svgs(pdf_path: Path, output_dir: Path) -> list[Path]:
     page_count = get_pdf_page_count(pdf_path)
-    svg_files: list[Path] = []
+    max_workers = max(1, min(settings.page_convert_workers, page_count))
 
-    for page in range(1, page_count + 1):
-        svg_path = output_dir / f"slide-{page:03d}.svg"
-        run_command(
-            [
-                "pdftocairo",
-                "-svg",
-                "-f",
-                str(page),
-                "-l",
-                str(page),
-                str(pdf_path),
-                str(svg_path),
-            ]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        svg_files = list(
+            executor.map(
+                lambda page: convert_pdf_page_to_svg(pdf_path, output_dir, page),
+                range(1, page_count + 1),
+            )
         )
-        if not svg_path.exists():
-            raise ConversionError(f"Failed to generate SVG for page {page}.")
-        svg_files.append(svg_path)
 
-    return svg_files
+    return sorted(svg_files)
+
+
+def convert_pdf_page_to_svg(pdf_path: Path, output_dir: Path, page: int) -> Path:
+    svg_path = output_dir / f"slide-{page:03d}.svg"
+    run_command(
+        [
+            "pdftocairo",
+            "-svg",
+            "-f",
+            str(page),
+            "-l",
+            str(page),
+            str(pdf_path),
+            str(svg_path),
+        ]
+    )
+    if not svg_path.exists():
+        raise ConversionError(f"Failed to generate SVG for page {page}.")
+    return svg_path
 
 
 def get_pdf_page_count(pdf_path: Path) -> int:
@@ -176,4 +189,3 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
 def sanitize_filename(name: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._")
     return normalized or "source"
-
