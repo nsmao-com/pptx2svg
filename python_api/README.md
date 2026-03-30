@@ -87,3 +87,13 @@ curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
 - 镜像内已增加常见中文字体包和 Windows 常见字体的替代映射
 - 如果 PPT 使用了特殊商用字体，仍建议把原字体文件放进 [fonts](./fonts) 后重新构建
 
+
+## 挂载本地字体
+
+如果你有真实的微软雅黑等字体文件，不要提交到公开仓库，建议直接在服务器挂载字体目录：
+
+```bash
+docker run -d --name pptx2svg -p 8321:8321 -v /opt/pptx2svg/fonts:/usr/local/share/fonts/custom ppt-to-svg-api
+```
+
+容器启动时会自动刷新字体缓存。

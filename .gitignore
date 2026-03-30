@@ -6,3 +6,9 @@ __pycache__/
 .venv/
 dist/
 build/
+
+fonts/*.ttf
+fonts/*.ttc
+python_api/fonts/*.ttf
+python_api/fonts/*.ttc
+
