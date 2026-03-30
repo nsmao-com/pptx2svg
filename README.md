@@ -46,6 +46,27 @@ docker build -t pptx2svg-api https://github.com/nsmao-com/pptx2svg.git
 docker run --rm -p 8000:8000 pptx2svg-api
 ```
 
+## 自动发布 GHCR 镜像
+
+仓库已配置 GitHub Actions。推送到 `main` 分支后，会自动构建并发布镜像到 GitHub Container Registry。
+
+镜像地址：
+
+```bash
+ghcr.io/nsmao-com/pptx2svg:latest
+```
+
+按 commit SHA 的镜像标签也会一起发布，便于固定版本部署。
+
+拉取镜像：
+
+```bash
+docker pull ghcr.io/nsmao-com/pptx2svg:latest
+docker run --rm -p 8000:8000 ghcr.io/nsmao-com/pptx2svg:latest
+```
+
+如果第一次发布后镜像不是公开的，需要在 GitHub 的 `Packages` 页面把该容器包可见性改成 `public`。
+
 ## 本地构建 Docker
 
 ```bash
