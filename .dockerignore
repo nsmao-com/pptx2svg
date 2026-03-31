@@ -7,3 +7,4 @@ __pycache__
 .venv
 dist
 build
+python_api/java_renderer/target
