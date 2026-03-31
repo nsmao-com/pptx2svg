@@ -24,15 +24,27 @@
 
 ```json
 {
-  "ppt_url": "https://example.com/demo.pptx"
+  "ppt_url": "https://example.com/demo.pptx",
+  "url": false
 }
 ```
 
 返回：
 
-- `200 OK`
-- `Content-Type: application/zip`
-- 压缩包内文件名格式：`slide-001.svg`、`slide-002.svg`
+- `url` 不传或为 `false`：
+  - `200 OK`
+  - `Content-Type: application/zip`
+- `url=true`：
+  - `200 OK`
+  - `Content-Type: application/json`
+  - 返回示例：
+
+```json
+{
+  "filename": "demo-a1b2c3d4e5f6.zip",
+  "url": "/downloads/demo-a1b2c3d4e5f6.zip"
+}
+```
 
 ## 本地运行
 

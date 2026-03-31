@@ -25,11 +25,15 @@
 
 ```json
 {
-  "ppt_url": "https://example.com/demo.pptx"
+  "ppt_url": "https://example.com/demo.pptx",
+  "url": false
 }
 ```
 
-成功后返回 `application/zip`。
+成功后：
+
+- `url` 不传或为 `false`：返回 `application/zip`
+- `url=true`：保存 ZIP 到服务端本地目录并返回 JSON 下载链接
 
 ## 直接从 GitHub 构建 Docker
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 
@@ -229,3 +230,12 @@ def read_text_file(path: Path) -> str:
 def sanitize_filename(name: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._")
     return normalized or "source"
+
+
+def save_zip_bytes(archive_name: str, archive_bytes: bytes) -> tuple[str, Path]:
+    settings.downloads_root.mkdir(parents=True, exist_ok=True)
+    base_name = sanitize_filename(Path(archive_name).stem)
+    unique_name = f"{base_name}-{uuid4().hex[:12]}.zip"
+    target_path = settings.downloads_root / unique_name
+    target_path.write_bytes(archive_bytes)
+    return unique_name, target_path
