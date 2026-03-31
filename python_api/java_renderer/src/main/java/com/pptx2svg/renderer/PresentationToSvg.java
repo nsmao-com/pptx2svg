@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Locale;
 
 import org.apache.batik.dom.GenericDOMImplementation;
+import org.apache.batik.ext.awt.image.codec.png.PNGImageWriter;
+import org.apache.batik.ext.awt.image.spi.ImageWriterRegistry;
 import org.apache.poi.sl.draw.Drawable;
 import org.apache.poi.sl.usermodel.Slide;
 import org.apache.poi.sl.usermodel.SlideShow;
@@ -30,6 +32,7 @@ public final class PresentationToSvg {
     public static void main(String[] args) throws Exception {
         Arguments parsed = Arguments.parse(args);
         Files.createDirectories(parsed.outputDir());
+        ensureImageWriters();
 
         try (SlideShow<?, ?> slideShow = SlideShowFactory.create(parsed.input().toFile(), null, true)) {
             List<? extends Slide<?, ?>> slides = slideShow.getSlides();
@@ -45,6 +48,13 @@ public final class PresentationToSvg {
         }
 
         System.out.println("ok");
+    }
+
+    private static void ensureImageWriters() {
+        ImageWriterRegistry registry = ImageWriterRegistry.getInstance();
+        if (registry.getWriterFor("image/png") == null) {
+            registry.register(new PNGImageWriter());
+        }
     }
 
     private static void writeSlideSvg(
