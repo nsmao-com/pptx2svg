@@ -4,11 +4,13 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -28,12 +30,18 @@ import org.apache.poi.xslf.usermodel.XSLFGroupShape;
 import org.apache.poi.xslf.usermodel.XSLFPictureShape;
 import org.apache.poi.xslf.usermodel.XSLFShape;
 import org.apache.poi.xslf.usermodel.XSLFShapeContainer;
+import org.apache.poi.xslf.usermodel.XSLFSheet;
 import org.apache.poi.xslf.usermodel.XSLFSlide;
+import org.apache.xmlbeans.XmlObject;
+import org.openxmlformats.schemas.presentationml.x2006.main.CTGroupShape;
 import org.w3c.dom.DOMImplementation;
 import org.w3c.dom.Document;
 
 public final class PresentationToSvg {
     private static final String SVG_NS = "http://www.w3.org/2000/svg";
+    private static final String PRESENTATIONML_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
+    private static final String DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    private static final String MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
     private PresentationToSvg() {
     }
@@ -102,6 +110,12 @@ public final class PresentationToSvg {
     private static void drawUnsupportedXslfShapes(XSLFShapeContainer container, Graphics2D graphics) {
         for (XSLFShape shape : container.getShapes()) {
             if (shape instanceof XSLFGraphicFrame frame && !frame.hasChart()) {
+                XSLFGroupShape fallbackGroup = buildFallbackGroup(frame);
+                if (fallbackGroup != null) {
+                    drawShape(fallbackGroup, graphics);
+                    continue;
+                }
+
                 XSLFPictureShape fallbackPicture = frame.getFallbackPicture();
                 if (fallbackPicture != null) {
                     drawShape(fallbackPicture, graphics);
@@ -118,6 +132,46 @@ public final class PresentationToSvg {
                 drawUnsupportedXslfShapes(groupShape, graphics);
             }
         }
+    }
+
+    private static XSLFGroupShape buildFallbackGroup(XSLFGraphicFrame frame) {
+        try {
+            XmlObject[] fallbackNodes = frame.getXmlObject().selectPath(
+                "declare namespace p='" + PRESENTATIONML_NS + "'; " +
+                "declare namespace mc='" + MC_NS + "' " +
+                ".//mc:Fallback/*/*[self::p:sp or self::p:pic or self::p:grpSp or self::p:cxnSp]"
+            );
+            if (fallbackNodes.length == 0) {
+                return null;
+            }
+
+            StringBuilder xml = new StringBuilder();
+            xml.append("<p:grpSp xmlns:p=\"").append(PRESENTATIONML_NS).append("\" ")
+                .append("xmlns:a=\"").append(DRAWINGML_NS).append("\">")
+                .append("<p:nvGrpSpPr><p:cNvPr id=\"0\" name=\"fallback\"/>")
+                .append("<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>")
+                .append("<p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/>")
+                .append("<a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr>");
+            for (XmlObject fallbackNode : fallbackNodes) {
+                xml.append(fallbackNode.xmlText());
+            }
+            xml.append("</p:grpSp>");
+
+            CTGroupShape groupShapeXml = CTGroupShape.Factory.parse(xml.toString());
+            XSLFGroupShape groupShape = instantiateGroupShape(groupShapeXml, frame.getSheet());
+            Rectangle2D anchor = frame.getAnchor();
+            groupShape.setAnchor(anchor);
+            groupShape.setInteriorAnchor(new Rectangle2D.Double(0, 0, anchor.getWidth(), anchor.getHeight()));
+            return groupShape;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static XSLFGroupShape instantiateGroupShape(CTGroupShape groupShapeXml, XSLFSheet sheet) throws Exception {
+        Constructor<XSLFGroupShape> constructor = XSLFGroupShape.class.getDeclaredConstructor(CTGroupShape.class, XSLFSheet.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(groupShapeXml, sheet);
     }
 
     private static void drawShape(XSLFShape shape, Graphics2D graphics) {
