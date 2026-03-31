@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import io
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import zipfile
 from pathlib import Path
@@ -49,6 +51,9 @@ def get_uno_python_binary() -> Path:
 
 
 def ensure_dependencies() -> None:
+    missing = [command for command in ("pdfinfo", "pdftocairo") if shutil.which(command) is None]
+    if missing:
+        raise ConversionError(f"Missing system dependencies: {', '.join(missing)}")
     get_soffice_binary()
     get_uno_python_binary()
     if not UNO_EXPORT_SCRIPT.exists():
@@ -62,12 +67,17 @@ def convert_ppt_url_to_svg_zip(source_url: str) -> tuple[str, bytes]:
     with TemporaryDirectory(dir=settings.work_root) as temp_dir:
         temp_path = Path(temp_dir)
         input_path = download_presentation(source_url, temp_path)
+        pdf_dir = temp_path / "pdf"
+        png_dir = temp_path / "png"
         svg_dir = temp_path / "svg"
         office_profile_dir = temp_path / "lo-profile"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        png_dir.mkdir(parents=True, exist_ok=True)
         svg_dir.mkdir(parents=True, exist_ok=True)
         office_profile_dir.mkdir(parents=True, exist_ok=True)
 
-        svg_files = convert_to_svgs(input_path, svg_dir, office_profile_dir)
+        pdf_path = convert_to_pdf(input_path, pdf_dir, office_profile_dir)
+        svg_files = convert_pdf_to_svgs(pdf_path, png_dir, svg_dir)
         archive_name = f"{input_path.stem}.zip"
         archive_bytes = build_zip_bytes(svg_files)
         return archive_name, archive_bytes
@@ -116,9 +126,10 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
     return target_path
 
 
-def convert_to_svgs(input_path: Path, output_dir: Path, office_profile_dir: Path) -> list[Path]:
+def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path) -> Path:
     soffice_binary = get_soffice_binary()
     uno_python = get_uno_python_binary()
+    pdf_path = output_dir / f"{input_path.stem}.pdf"
     listener_port = reserve_tcp_port()
     listener_log_path = output_dir / "libreoffice-listener.log"
 
@@ -150,8 +161,8 @@ def convert_to_svgs(input_path: Path, output_dir: Path, office_profile_dir: Path
                     str(listener_port),
                     "--input",
                     str(input_path),
-                    "--output-dir",
-                    str(output_dir),
+                    "--output",
+                    str(pdf_path),
                     "--timeout",
                     str(settings.libreoffice_start_timeout_seconds),
                 ]
@@ -166,12 +177,83 @@ def convert_to_svgs(input_path: Path, output_dir: Path, office_profile_dir: Path
         finally:
             terminate_process(listener_process)
 
-    svg_files = sorted(output_dir.glob("slide-*.svg"))
-    if svg_files:
-        return svg_files
+    if pdf_path.exists():
+        return pdf_path
 
-    details = result.stdout.strip() if result.stdout else "LibreOffice did not generate any SVG files."
+    details = result.stdout.strip() if result.stdout else "LibreOffice did not generate a PDF file."
     raise ConversionError(details)
+
+
+def convert_pdf_to_svgs(pdf_path: Path, png_dir: Path, svg_dir: Path) -> list[Path]:
+    page_count = get_pdf_page_count(pdf_path)
+    svg_files: list[Path] = []
+
+    for page in range(1, page_count + 1):
+        png_path = rasterize_pdf_page_to_png(pdf_path, png_dir, page)
+        svg_path = svg_dir / f"slide-{page:03d}.svg"
+        wrap_png_in_svg(png_path, svg_path)
+        svg_files.append(svg_path)
+
+    return svg_files
+
+
+def get_pdf_page_count(pdf_path: Path) -> int:
+    result = run_command(["pdfinfo", str(pdf_path)])
+    match = re.search(r"^Pages:\s+(\d+)$", result.stdout, re.MULTILINE)
+    if match is None:
+        raise ConversionError("Unable to determine PDF page count.")
+
+    page_count = int(match.group(1))
+    if page_count <= 0:
+        raise ConversionError("PDF contains no pages.")
+    return page_count
+
+
+def rasterize_pdf_page_to_png(pdf_path: Path, output_dir: Path, page: int) -> Path:
+    output_prefix = output_dir / f"slide-{page:03d}"
+    png_path = output_prefix.with_suffix(".png")
+    run_command(
+        [
+            "pdftocairo",
+            "-png",
+            "-singlefile",
+            "-r",
+            str(settings.svg_raster_dpi),
+            "-f",
+            str(page),
+            "-l",
+            str(page),
+            str(pdf_path),
+            str(output_prefix),
+        ]
+    )
+    if not png_path.exists():
+        raise ConversionError(f"Failed to rasterize PDF page {page}.")
+    return png_path
+
+
+def wrap_png_in_svg(png_path: Path, svg_path: Path) -> None:
+    width, height = read_png_dimensions(png_path)
+    png_data = base64.b64encode(png_path.read_bytes()).decode("ascii")
+    svg_markup = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">'
+        f'<image width="{width}" height="{height}" href="data:image/png;base64,{png_data}"/>'
+        "</svg>\n"
+    )
+    svg_path.write_text(svg_markup, encoding="utf-8")
+
+
+def read_png_dimensions(png_path: Path) -> tuple[int, int]:
+    with png_path.open("rb") as file_obj:
+        header = file_obj.read(24)
+
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ConversionError(f"Invalid PNG output: {png_path.name}")
+
+    width, height = struct.unpack(">II", header[16:24])
+    return width, height
 
 
 def build_zip_bytes(svg_files: Iterable[Path]) -> bytes:

@@ -92,68 +92,24 @@ def disable_asian_character_spacing(text) -> int:
     return changed
 
 
-def shift_shape_position(shape, offset_x: int, offset_y: int) -> None:
-    current_position = shape.getPosition()
-    current_position.X += offset_x
-    current_position.Y += offset_y
-    shape.setPosition(current_position)
-
-
-def ungroup_page_shapes(draw_page) -> int:
-    ungrouped = 0
-    while True:
-        groups = []
-        for index in range(draw_page.getCount()):
-            shape = draw_page.getByIndex(index)
-            if shape.supportsService("com.sun.star.drawing.GroupShape"):
-                groups.append(shape)
-
-        if not groups:
-            return ungrouped
-
-        for group_shape in groups:
-            group_position = group_shape.getPosition()
-            for child_index in range(group_shape.getCount()):
-                child_shape = group_shape.getByIndex(child_index)
-                shift_shape_position(child_shape, group_position.X, group_position.Y)
-            draw_page.ungroup(group_shape)
-            ungrouped += 1
-
-
-def normalize_document(document) -> tuple[int, int]:
+def normalize_document(document) -> int:
     changed = 0
-    ungrouped = 0
     draw_pages = document.getDrawPages()
     for page_index in range(draw_pages.getCount()):
         draw_page = draw_pages.getByIndex(page_index)
-        ungrouped += ungroup_page_shapes(draw_page)
         for shape in iter_shapes(draw_page):
             for text in iter_shape_texts(shape):
                 changed += disable_asian_character_spacing(text)
-    return changed, ungrouped
+    return changed
 
 
-def export_svg_page(context, draw_page, output_path: Path) -> None:
-    exporter = context.ServiceManager.createInstanceWithContext(
-        "com.sun.star.drawing.GraphicExportFilter",
-        context,
-    )
-    exporter.setSourceDocument(draw_page)
-    export_properties = (
-        make_property("URL", to_file_url(output_path)),
-        make_property("MimeType", "image/svg+xml"),
-        make_property("Overwrite", True),
-    )
-    exporter.filter(export_properties)
-
-
-def export_svg_pages(
+def export_pdf(
     host: str,
     port: int,
     input_path: Path,
-    output_dir: Path,
+    output_path: Path,
     timeout_seconds: int,
-) -> tuple[int, int, int]:
+) -> int:
     context = connect(host, port, timeout_seconds)
     desktop = context.ServiceManager.createInstanceWithContext(
         "com.sun.star.frame.Desktop",
@@ -174,20 +130,13 @@ def export_svg_pages(
         raise RuntimeError("LibreOffice failed to load the presentation.")
 
     try:
-        changed, ungrouped = normalize_document(document)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        draw_pages = document.getDrawPages()
-        exported = draw_pages.getCount()
-
-        for page_index in range(exported):
-            draw_page = draw_pages.getByIndex(page_index)
-            export_svg_page(
-                context,
-                draw_page,
-                output_dir / f"slide-{page_index + 1:03d}.svg",
-            )
-
-        return changed, exported, ungrouped
+        changed = normalize_document(document)
+        export_properties = (
+            make_property("FilterName", "impress_pdf_Export"),
+            make_property("Overwrite", True),
+        )
+        document.storeToURL(to_file_url(output_path), export_properties)
+        return changed
     finally:
         document.close(True)
 
@@ -197,23 +146,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=45)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    changed, exported, ungrouped = export_svg_pages(
+    changed = export_pdf(
         args.host,
         args.port,
         args.input,
-        args.output_dir,
+        args.output,
         args.timeout,
     )
     print(f"normalized_paragraphs={changed}")
-    print(f"exported_svgs={exported}")
-    print(f"ungrouped_shapes={ungrouped}")
     return 0
 
 

@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     fontconfig \
     libcairo2 \
+    poppler-utils \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fonts-wqy-zenhei \
