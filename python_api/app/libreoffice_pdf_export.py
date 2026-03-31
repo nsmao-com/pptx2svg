@@ -103,26 +103,18 @@ def normalize_document(document) -> int:
     return changed
 
 
-def get_svg_filter_name(document) -> str:
-    if document.supportsService("com.sun.star.presentation.PresentationDocument"):
-        return "impress_svg_Export"
-    if document.supportsService("com.sun.star.drawing.DrawingDocument"):
-        return "draw_svg_Export"
-    raise RuntimeError("LibreOffice loaded an unsupported document type for SVG export.")
-
-
-def make_filter_data(page_number: int):
-    filter_data = (make_property("PageNumber", page_number),)
-    return uno.Any("[]com.sun.star.beans.PropertyValue", filter_data)
-
-
-def export_svg_page(document, output_path: Path, filter_name: str, page_number: int) -> None:
+def export_svg_page(context, draw_page, output_path: Path) -> None:
+    exporter = context.ServiceManager.createInstanceWithContext(
+        "com.sun.star.drawing.GraphicExportFilter",
+        context,
+    )
+    exporter.setSourceDocument(draw_page)
     export_properties = (
-        make_property("FilterName", filter_name),
-        make_property("FilterData", make_filter_data(page_number)),
+        make_property("URL", to_file_url(output_path)),
+        make_property("MimeType", "image/svg+xml"),
         make_property("Overwrite", True),
     )
-    document.storeToURL(to_file_url(output_path), export_properties)
+    exporter.filter(export_properties)
 
 
 def export_svg_pages(
@@ -154,16 +146,15 @@ def export_svg_pages(
     try:
         changed = normalize_document(document)
         output_dir.mkdir(parents=True, exist_ok=True)
-        filter_name = get_svg_filter_name(document)
         draw_pages = document.getDrawPages()
         exported = draw_pages.getCount()
 
-        for page_number in range(1, exported + 1):
+        for page_index in range(exported):
+            draw_page = draw_pages.getByIndex(page_index)
             export_svg_page(
-                document,
-                output_dir / f"slide-{page_number:03d}.svg",
-                filter_name,
-                page_number,
+                context,
+                draw_page,
+                output_dir / f"slide-{page_index + 1:03d}.svg",
             )
 
         return changed, exported
