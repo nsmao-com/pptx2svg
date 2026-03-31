@@ -92,6 +92,13 @@ def disable_asian_character_spacing(text) -> int:
     return changed
 
 
+def shift_shape_position(shape, offset_x: int, offset_y: int) -> None:
+    current_position = shape.getPosition()
+    current_position.X += offset_x
+    current_position.Y += offset_y
+    shape.setPosition(current_position)
+
+
 def ungroup_page_shapes(draw_page) -> int:
     ungrouped = 0
     while True:
@@ -105,6 +112,10 @@ def ungroup_page_shapes(draw_page) -> int:
             return ungrouped
 
         for group_shape in groups:
+            group_position = group_shape.getPosition()
+            for child_index in range(group_shape.getCount()):
+                child_shape = group_shape.getByIndex(child_index)
+                shift_shape_position(child_shape, group_position.X, group_position.Y)
             draw_page.ungroup(group_shape)
             ungrouped += 1
 
