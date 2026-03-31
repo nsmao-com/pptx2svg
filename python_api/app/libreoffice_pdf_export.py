@@ -92,15 +92,34 @@ def disable_asian_character_spacing(text) -> int:
     return changed
 
 
-def normalize_document(document) -> int:
+def ungroup_page_shapes(draw_page) -> int:
+    ungrouped = 0
+    while True:
+        groups = []
+        for index in range(draw_page.getCount()):
+            shape = draw_page.getByIndex(index)
+            if shape.supportsService("com.sun.star.drawing.GroupShape"):
+                groups.append(shape)
+
+        if not groups:
+            return ungrouped
+
+        for group_shape in groups:
+            draw_page.ungroup(group_shape)
+            ungrouped += 1
+
+
+def normalize_document(document) -> tuple[int, int]:
     changed = 0
+    ungrouped = 0
     draw_pages = document.getDrawPages()
     for page_index in range(draw_pages.getCount()):
         draw_page = draw_pages.getByIndex(page_index)
+        ungrouped += ungroup_page_shapes(draw_page)
         for shape in iter_shapes(draw_page):
             for text in iter_shape_texts(shape):
                 changed += disable_asian_character_spacing(text)
-    return changed
+    return changed, ungrouped
 
 
 def export_svg_page(context, draw_page, output_path: Path) -> None:
@@ -123,7 +142,7 @@ def export_svg_pages(
     input_path: Path,
     output_dir: Path,
     timeout_seconds: int,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     context = connect(host, port, timeout_seconds)
     desktop = context.ServiceManager.createInstanceWithContext(
         "com.sun.star.frame.Desktop",
@@ -144,7 +163,7 @@ def export_svg_pages(
         raise RuntimeError("LibreOffice failed to load the presentation.")
 
     try:
-        changed = normalize_document(document)
+        changed, ungrouped = normalize_document(document)
         output_dir.mkdir(parents=True, exist_ok=True)
         draw_pages = document.getDrawPages()
         exported = draw_pages.getCount()
@@ -157,7 +176,7 @@ def export_svg_pages(
                 output_dir / f"slide-{page_index + 1:03d}.svg",
             )
 
-        return changed, exported
+        return changed, exported, ungrouped
     finally:
         document.close(True)
 
@@ -174,7 +193,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    changed, exported = export_svg_pages(
+    changed, exported, ungrouped = export_svg_pages(
         args.host,
         args.port,
         args.input,
@@ -183,6 +202,7 @@ def main() -> int:
     )
     print(f"normalized_paragraphs={changed}")
     print(f"exported_svgs={exported}")
+    print(f"ungrouped_shapes={ungrouped}")
     return 0
 
 
