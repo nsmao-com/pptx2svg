@@ -101,16 +101,17 @@ public final class PresentationToSvg {
 
     private static void drawUnsupportedXslfShapes(XSLFShapeContainer container, Graphics2D graphics) {
         for (XSLFShape shape : container.getShapes()) {
-            if (shape instanceof XSLFDiagram diagram) {
-                drawShape(diagram.getGroupShape(), graphics);
-                continue;
-            }
-
             if (shape instanceof XSLFGraphicFrame frame && !frame.hasChart()) {
                 XSLFPictureShape fallbackPicture = frame.getFallbackPicture();
                 if (fallbackPicture != null) {
                     drawShape(fallbackPicture, graphics);
+                    continue;
                 }
+            }
+
+            if (shape instanceof XSLFDiagram diagram) {
+                drawShape(diagram.getGroupShape(), graphics);
+                continue;
             }
 
             if (shape instanceof XSLFGroupShape groupShape) {
