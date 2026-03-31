@@ -6,7 +6,6 @@ import shutil
 import socket
 import subprocess
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
@@ -49,9 +48,6 @@ def get_uno_python_binary() -> Path:
 
 
 def ensure_dependencies() -> None:
-    missing = [command for command in ("pdfinfo", "pdftocairo") if shutil.which(command) is None]
-    if missing:
-        raise ConversionError(f"Missing system dependencies: {', '.join(missing)}")
     get_soffice_binary()
     get_uno_python_binary()
     if not UNO_EXPORT_SCRIPT.exists():
@@ -65,15 +61,12 @@ def convert_ppt_url_to_svg_zip(source_url: str) -> tuple[str, bytes]:
     with TemporaryDirectory(dir=settings.work_root) as temp_dir:
         temp_path = Path(temp_dir)
         input_path = download_presentation(source_url, temp_path)
-        pdf_dir = temp_path / "pdf"
         svg_dir = temp_path / "svg"
         office_profile_dir = temp_path / "lo-profile"
-        pdf_dir.mkdir(parents=True, exist_ok=True)
         svg_dir.mkdir(parents=True, exist_ok=True)
         office_profile_dir.mkdir(parents=True, exist_ok=True)
 
-        pdf_path = convert_to_pdf(input_path, pdf_dir, office_profile_dir)
-        svg_files = convert_pdf_to_svgs(pdf_path, svg_dir)
+        svg_files = convert_to_svgs(input_path, svg_dir, office_profile_dir)
         archive_name = f"{input_path.stem}.zip"
         archive_bytes = build_zip_bytes(svg_files)
         return archive_name, archive_bytes
@@ -122,10 +115,9 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
     return target_path
 
 
-def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path) -> Path:
+def convert_to_svgs(input_path: Path, output_dir: Path, office_profile_dir: Path) -> list[Path]:
     soffice_binary = get_soffice_binary()
     uno_python = get_uno_python_binary()
-    pdf_path = output_dir / f"{input_path.stem}.pdf"
     listener_port = reserve_tcp_port()
     listener_log_path = output_dir / "libreoffice-listener.log"
 
@@ -157,8 +149,8 @@ def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path)
                     str(listener_port),
                     "--input",
                     str(input_path),
-                    "--output",
-                    str(pdf_path),
+                    "--output-dir",
+                    str(output_dir),
                     "--timeout",
                     str(settings.libreoffice_start_timeout_seconds),
                 ]
@@ -173,60 +165,12 @@ def convert_to_pdf(input_path: Path, output_dir: Path, office_profile_dir: Path)
         finally:
             terminate_process(listener_process)
 
-    if not pdf_path.exists():
-        details = (
-            result.stdout.strip()
-            if result.stdout
-            else "LibreOffice did not generate a PDF file."
-        )
-        raise ConversionError(details)
-    return pdf_path
+    svg_files = sorted(output_dir.glob("slide-*.svg"))
+    if svg_files:
+        return svg_files
 
-
-def convert_pdf_to_svgs(pdf_path: Path, output_dir: Path) -> list[Path]:
-    page_count = get_pdf_page_count(pdf_path)
-    max_workers = max(1, min(settings.page_convert_workers, page_count))
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        svg_files = list(
-            executor.map(
-                lambda page: convert_pdf_page_to_svg(pdf_path, output_dir, page),
-                range(1, page_count + 1),
-            )
-        )
-
-    return sorted(svg_files)
-
-
-def convert_pdf_page_to_svg(pdf_path: Path, output_dir: Path, page: int) -> Path:
-    svg_path = output_dir / f"slide-{page:03d}.svg"
-    run_command(
-        [
-            "pdftocairo",
-            "-svg",
-            "-f",
-            str(page),
-            "-l",
-            str(page),
-            str(pdf_path),
-            str(svg_path),
-        ]
-    )
-    if not svg_path.exists():
-        raise ConversionError(f"Failed to generate SVG for page {page}.")
-    return svg_path
-
-
-def get_pdf_page_count(pdf_path: Path) -> int:
-    result = run_command(["pdfinfo", str(pdf_path)])
-    match = re.search(r"^Pages:\s+(\d+)$", result.stdout, re.MULTILINE)
-    if match is None:
-        raise ConversionError("Unable to determine PDF page count.")
-
-    page_count = int(match.group(1))
-    if page_count <= 0:
-        raise ConversionError("PDF contains no pages.")
-    return page_count
+    details = result.stdout.strip() if result.stdout else "LibreOffice did not generate any SVG files."
+    raise ConversionError(details)
 
 
 def build_zip_bytes(svg_files: Iterable[Path]) -> bytes:

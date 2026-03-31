@@ -7,8 +7,7 @@
 转换链路：
 
 1. 下载远程 `.ppt` / `.pptx`
-2. 使用 `LibreOffice` 无头模式转成 PDF
-3. 使用 `pdftocairo` 将 PDF 每一页转成一个 SVG
+2. 使用 `LibreOffice` 无头模式直接按页导出 SVG
 4. 打包成 ZIP 返回
 
 ## 接口
@@ -72,7 +71,6 @@ curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
 - `DOWNLOAD_TIMEOUT_SECONDS`: 下载超时，默认 `120`
 - `COMMAND_TIMEOUT_SECONDS`: 转换命令超时，默认 `240`
 - `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
-- `PAGE_CONVERT_WORKERS`: PDF 按页转 SVG 的并发数，默认 `4`
 - `LIBREOFFICE_START_TIMEOUT_SECONDS`: UNO 导出连接 LibreOffice 的启动等待秒数，默认 `45`
 
 ## 注意事项
@@ -108,5 +106,5 @@ docker run -d --name pptx2svg -p 8321:8321 -v /opt/pptx2svg/fonts:/usr/local/sha
 ## LibreOffice 版本策略
 
 - 镜像已从 Debian 仓库版切换为官方 LibreOffice Fresh 26.2.1
-- 这样做是为了尽量吸收较新的 PPTX 导入与形状兼容修复，尤其是组合图形、连接线和局部错位问题
+- 当前导出链路改为 LibreOffice 直接按页输出 SVG，避免 PDF 中转对组合图形、连接线和局部坐标变换的额外损耗
 

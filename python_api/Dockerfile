@@ -12,7 +12,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DOWNLOAD_TIMEOUT_SECONDS=120 \
     COMMAND_TIMEOUT_SECONDS=240 \
     MAX_DOWNLOAD_MB=100 \
-    PAGE_CONVERT_WORKERS=4 \
     LIBREOFFICE_START_TIMEOUT_SECONDS=45 \
     LIBREOFFICE_PROGRAM_DIR=/opt/libreoffice${LIBREOFFICE_SERIES}/program
 
@@ -22,7 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     xz-utils \
     fontconfig \
-    poppler-utils \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fonts-wqy-zenhei \

@@ -103,7 +103,35 @@ def normalize_document(document) -> int:
     return changed
 
 
-def export_pdf(host: str, port: int, input_path: Path, output_path: Path, timeout_seconds: int) -> int:
+def get_svg_filter_name(document) -> str:
+    if document.supportsService("com.sun.star.presentation.PresentationDocument"):
+        return "impress_svg_Export"
+    if document.supportsService("com.sun.star.drawing.DrawingDocument"):
+        return "draw_svg_Export"
+    raise RuntimeError("LibreOffice loaded an unsupported document type for SVG export.")
+
+
+def make_filter_data(page_number: int):
+    filter_data = (make_property("PageNumber", page_number),)
+    return uno.Any("[]com.sun.star.beans.PropertyValue", filter_data)
+
+
+def export_svg_page(document, output_path: Path, filter_name: str, page_number: int) -> None:
+    export_properties = (
+        make_property("FilterName", filter_name),
+        make_property("FilterData", make_filter_data(page_number)),
+        make_property("Overwrite", True),
+    )
+    document.storeToURL(to_file_url(output_path), export_properties)
+
+
+def export_svg_pages(
+    host: str,
+    port: int,
+    input_path: Path,
+    output_dir: Path,
+    timeout_seconds: int,
+) -> tuple[int, int]:
     context = connect(host, port, timeout_seconds)
     desktop = context.ServiceManager.createInstanceWithContext(
         "com.sun.star.frame.Desktop",
@@ -125,9 +153,20 @@ def export_pdf(host: str, port: int, input_path: Path, output_path: Path, timeou
 
     try:
         changed = normalize_document(document)
-        export_properties = (make_property("FilterName", "impress_pdf_Export"),)
-        document.storeToURL(to_file_url(output_path), export_properties)
-        return changed
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filter_name = get_svg_filter_name(document)
+        draw_pages = document.getDrawPages()
+        exported = draw_pages.getCount()
+
+        for page_number in range(1, exported + 1):
+            export_svg_page(
+                document,
+                output_dir / f"slide-{page_number:03d}.svg",
+                filter_name,
+                page_number,
+            )
+
+        return changed, exported
     finally:
         document.close(True)
 
@@ -137,15 +176,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=45)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    changed = export_pdf(args.host, args.port, args.input, args.output, args.timeout)
+    changed, exported = export_svg_pages(
+        args.host,
+        args.port,
+        args.input,
+        args.output_dir,
+        args.timeout,
+    )
     print(f"normalized_paragraphs={changed}")
+    print(f"exported_svgs={exported}")
     return 0
 
 
