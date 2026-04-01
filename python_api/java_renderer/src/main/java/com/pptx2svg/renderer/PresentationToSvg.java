@@ -149,7 +149,7 @@ public final class PresentationToSvg {
         private static Arguments parse(String[] args) {
             Path input = null;
             Path outputDir = null;
-            boolean textAsShapes = true;
+            boolean textAsShapes = false;
 
             List<String> tokens = new ArrayList<>();
             for (String arg : args) {

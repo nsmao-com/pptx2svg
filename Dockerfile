@@ -14,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     COMMAND_TIMEOUT_SECONDS=240 \
     MAX_DOWNLOAD_MB=100 \
     JAVA_RENDERER_JAR=/opt/pptx2svg-renderer/pptx2svg-renderer.jar \
-    SVG_TEXT_AS_SHAPES=true
+    SVG_TEXT_AS_SHAPES=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

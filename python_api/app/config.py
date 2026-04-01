@@ -27,7 +27,7 @@ class Settings:
             "/opt/pptx2svg-renderer/pptx2svg-renderer.jar",
         )
     )
-    svg_text_as_shapes: bool = env_bool("SVG_TEXT_AS_SHAPES", True)
+    svg_text_as_shapes: bool = env_bool("SVG_TEXT_AS_SHAPES", False)
 
     @property
     def max_download_bytes(self) -> int:
