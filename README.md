@@ -1,15 +1,29 @@
 # pptx2svg
 
-一个可直接部署到 Docker 的 PPT/PPTX 转 SVG API 服务。
+一个可直接部署到 Linux Docker 的 PPT / PPTX 转 SVG 服务。
 
-## 功能
+官网：<https://www.nsmao.com>
 
-- 传入远程 PPT/PPTX 链接
-- 服务端自动下载文件
-- 使用 LibreOffice 直接按页导出 SVG
-- 返回按页切分后的 SVG ZIP 压缩包
+## 当前能力
 
-接口实现位于 [python_api](./python_api)。
+- 输入远程 `.ppt` / `.pptx` 文件链接
+- 服务端自动下载源文件
+- 按页导出为独立 SVG
+- 返回 ZIP 压缩包，或返回服务端下载链接
+- 兼容 Linux Docker 部署
+
+## 当前导出策略
+
+当前主链路是：
+
+`PPT/PPTX -> Apache POI + Batik -> 每页原生 SVG -> ZIP`
+
+说明：
+
+- 普通文字默认保留为 SVG `text`
+- 普通形状、线条、图片优先走原生 SVG 渲染
+- 部分复杂图形对象会走 POI 可用的 fallback 渲染
+- 输出结果仍然是每页一个 `.svg`
 
 ## API
 
@@ -30,54 +44,44 @@
 }
 ```
 
-成功后：
+返回规则：
 
-- `url` 不传或为 `false`：返回 `application/zip`
-- `url=true`：保存 ZIP 到服务端本地目录并返回 JSON 下载链接
+- `url=false` 或不传：直接返回 `application/zip`
+- `url=true`：保存 ZIP 到服务端本地目录，并返回 JSON 下载地址
 
-## 直接从 GitHub 构建 Docker
+返回示例：
 
-仓库推送到 GitHub 后，可以直接从仓库远程构建：
-
-```bash
-docker build -t pptx2svg-api https://github.com/nsmao-com/pptx2svg.git
+```json
+{
+  "filename": "demo-a1b2c3d4e5f6.zip",
+  "url": "/downloads/demo-a1b2c3d4e5f6.zip"
+}
 ```
 
-运行：
+## Docker
 
-```bash
-docker run --rm -p 8321:8321 pptx2svg-api
-```
-
-## 自动发布 GHCR 镜像
-
-仓库已配置 GitHub Actions。推送到 `main` 分支后，会自动构建并发布镜像到 GitHub Container Registry。
-
-镜像地址：
-
-```bash
-ghcr.io/nsmao-com/pptx2svg:latest
-```
-
-按 commit SHA 的镜像标签也会一起发布，便于固定版本部署。
-
-拉取镜像：
-
-```bash
-docker pull ghcr.io/nsmao-com/pptx2svg:latest
-docker run --rm -p 8321:8321 ghcr.io/nsmao-com/pptx2svg:latest
-```
-
-如果第一次发布后镜像不是公开的，需要在 GitHub 的 `Packages` 页面把该容器包可见性改成 `public`。
-
-## 本地构建 Docker
+### 本地构建
 
 ```bash
 docker build -t pptx2svg-api .
 docker run --rm -p 8321:8321 pptx2svg-api
 ```
 
-## curl 调用示例
+### 直接从 GitHub 构建
+
+```bash
+docker build -t pptx2svg-api https://github.com/nsmao-com/pptx2svg.git
+docker run --rm -p 8321:8321 pptx2svg-api
+```
+
+### GHCR 镜像
+
+```bash
+docker pull ghcr.io/nsmao-com/pptx2svg:latest
+docker run --rm -p 8321:8321 ghcr.io/nsmao-com/pptx2svg:latest
+```
+
+## 调用示例
 
 ```bash
 curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
@@ -88,39 +92,33 @@ curl -X POST "http://127.0.0.1:8321/api/v1/convert/ppt-to-svg" \
 
 ## 环境变量
 
-- `WORK_ROOT`: 临时文件目录，默认 `/tmp/ppt-to-svg`
-- `APP_PORT`: 服务端口，默认 `8321`
-- `DOWNLOAD_TIMEOUT_SECONDS`: 下载超时秒数，默认 `120`
-- `COMMAND_TIMEOUT_SECONDS`: 转换命令超时秒数，默认 `240`
-- `MAX_DOWNLOAD_MB`: 最大下载体积，默认 `100`
-- `LIBREOFFICE_START_TIMEOUT_SECONDS`: UNO 导出连接 LibreOffice 的启动等待秒数，默认 `45`
+- `WORK_ROOT`：临时工作目录，默认 `/tmp/ppt-to-svg`
+- `DOWNLOADS_SUBDIR`：下载目录名，默认 `downloads`
+- `DOWNLOAD_TIMEOUT_SECONDS`：下载超时秒数，默认 `120`
+- `COMMAND_TIMEOUT_SECONDS`：转换命令超时秒数，默认 `240`
+- `MAX_DOWNLOAD_MB`：最大下载体积，默认 `100`
+- `JAVA_COMMAND`：Java 可执行文件，默认 `java`
+- `JAVA_RENDERER_JAR`：Java 渲染器 jar 路径
+- `SVG_TEXT_AS_SHAPES`：是否将文字转成形状，默认 `false`
 
+## 字体
 
-## 字体优化
+- 构建镜像前，可把常用 `.ttf` / `.ttc` 放到 [fonts](./fonts)
+- 容器内已包含常见中文字体和常见替代字体
+- 如 PPT 使用特殊商业字体，建议自行挂载真实字体目录
 
-- 构建镜像前，可把常用 .ttf / .ttc 字体放到 [fonts](./fonts)
-- 镜像内已增加常见中文字体包和 Windows 常见字体的替代映射
-- 如果 PPT 使用了特殊商用字体，仍建议把原字体文件放进 [fonts](./fonts) 后重新构建
-
-
-## 挂载本地字体
-
-如果你有真实的微软雅黑等字体文件，不要提交到公开仓库，建议直接在服务器挂载字体目录：
+挂载示例：
 
 ```bash
-docker run -d --name pptx2svg -p 8321:8321 -v /opt/pptx2svg/fonts:/usr/local/share/fonts/custom ghcr.io/nsmao-com/pptx2svg:latest
+docker run -d \
+  --name pptx2svg \
+  -p 8321:8321 \
+  -v /opt/pptx2svg/fonts:/usr/local/share/fonts/custom \
+  ghcr.io/nsmao-com/pptx2svg:latest
 ```
 
-容器启动时会自动刷新字体缓存。
+## 代码位置
 
-## 混排换行修正
-
-- 转 PDF 前会通过 UNO 遍历文本段落，关闭 LibreOffice Asian Typography 的字符间距扩张
-- 这主要用于缓解中文与数字/英文混排时被额外撑宽而换行的问题
-
-
-## LibreOffice 版本策略
-
-- 镜像已从 Debian 仓库版切换为官方 LibreOffice Fresh 26.2.1
-- 当前导出链路改为 LibreOffice 直接按页输出 SVG，避免 PDF 中转对组合图形、连接线和局部坐标变换的额外损耗
+- API 入口：[`python_api/app`](./python_api/app)
+- Java SVG 渲染器：[`python_api/java_renderer`](./python_api/java_renderer)
 
