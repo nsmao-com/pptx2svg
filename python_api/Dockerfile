@@ -1,9 +1,3 @@
-FROM maven:3.9.11-eclipse-temurin-17 AS java-builder
-
-WORKDIR /build
-COPY java_renderer ./java_renderer
-RUN mvn -q -f java_renderer/pom.xml -DskipTests package
-
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,8 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DOWNLOAD_TIMEOUT_SECONDS=120 \
     COMMAND_TIMEOUT_SECONDS=240 \
     MAX_DOWNLOAD_MB=100 \
-    JAVA_RENDERER_JAR=/opt/pptx2svg-renderer/pptx2svg-renderer.jar \
-    SVG_TEXT_AS_SHAPES=false
+    LIBREOFFICE_COMMAND=soffice \
+    MUPDF_COMMAND=mutool
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -38,7 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libice6 \
     libglib2.0-0 \
-    default-jre-headless \
+    libreoffice-impress \
+    mupdf-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -50,7 +45,6 @@ COPY docker/fontconfig/99-pptx2svg-fonts.conf /etc/fonts/conf.d/99-pptx2svg-font
 COPY docker/entrypoint.sh /usr/local/bin/pptx2svg-entrypoint.sh
 COPY fonts /usr/local/share/fonts/custom
 COPY app ./app
-COPY --from=java-builder /build/java_renderer/target/pptx2svg-renderer.jar /opt/pptx2svg-renderer/pptx2svg-renderer.jar
 
 RUN chmod +x /usr/local/bin/pptx2svg-entrypoint.sh && fc-cache -fv
 

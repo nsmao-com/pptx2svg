@@ -5,13 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 @dataclass(slots=True)
 class Settings:
     app_name: str = "ppt-to-svg-api"
@@ -20,14 +13,16 @@ class Settings:
     download_timeout_seconds: int = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
     command_timeout_seconds: int = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "240"))
     max_download_mb: int = int(os.getenv("MAX_DOWNLOAD_MB", "100"))
-    java_command: str = os.getenv("JAVA_COMMAND", "java")
-    java_renderer_jar: Path = Path(
-        os.getenv(
-            "JAVA_RENDERER_JAR",
-            "/opt/pptx2svg-renderer/pptx2svg-renderer.jar",
-        )
+    libreoffice_command: str = os.getenv("LIBREOFFICE_COMMAND", "soffice")
+    mupdf_command: str = os.getenv("MUPDF_COMMAND", "mutool")
+    libreoffice_pdf_filter: str = os.getenv(
+        "LIBREOFFICE_PDF_FILTER",
+        "pdf:impress_pdf_Export",
     )
-    svg_text_as_shapes: bool = env_bool("SVG_TEXT_AS_SHAPES", False)
+    libreoffice_svg_filter: str = os.getenv(
+        "LIBREOFFICE_SVG_FILTER",
+        "svg:impress_svg_Export",
+    )
 
     @property
     def max_download_bytes(self) -> int:

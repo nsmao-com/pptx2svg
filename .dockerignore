@@ -1,10 +1,16 @@
-.git
-__pycache__
+# input: docker build 上下文扫描
+# output: 排除运行产物与本地环境文件
+# pos: 2pptxsvg 镜像构建上下文过滤规则
+# 一旦我被更新，务必更新我的开头注释，以及所属的文件夹README。
+__pycache__/
 *.pyc
 *.pyo
-*.pyd
-.pytest_cache
-.venv
-dist
-build
-python_api/java_renderer/target
+*.log
+.venv/
+.venv_local/
+_docker_jobs/
+_jobs/
+_run/
+downloads/
+*.zip
+*.tar.gz

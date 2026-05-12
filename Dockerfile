@@ -1,20 +1,23 @@
-FROM maven:3.9.11-eclipse-temurin-17 AS java-builder
-
-WORKDIR /build
-COPY python_api/java_renderer ./java_renderer
-RUN mvn -q -f java_renderer/pom.xml -DskipTests package
-
+# input: 当前目录源码、requirements.txt、字体文件与fontconfig规则
+# output: 可运行2pptxsvg统一API的Docker镜像
+# pos: 2pptxsvg生产部署容器构建文件
+# 一旦我被更新，务必更新我的开头注释，以及所属的文件夹README。
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     WORK_ROOT=/tmp/ppt-to-svg \
-    APP_PORT=8321 \
+    APP_PORT=2222 \
     DOWNLOAD_TIMEOUT_SECONDS=120 \
     COMMAND_TIMEOUT_SECONDS=240 \
+    PPTX_PNG_RENDER_DPI=144 \
     MAX_DOWNLOAD_MB=100 \
-    JAVA_RENDERER_JAR=/opt/pptx2svg-renderer/pptx2svg-renderer.jar \
-    SVG_TEXT_AS_SHAPES=false
+    SVG2PPTX_CONVERT_TIMEOUT_SECONDS=900 \
+    LIBREOFFICE_COMMAND=soffice \
+    MUPDF_COMMAND=mutool \
+    SVG2PPTX_CUSTOM_FONT_DIR=/app/fonts
+
+WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -22,6 +25,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     libfreetype6 \
     libharfbuzz0b \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    shared-mime-info \
+    fonts-dejavu-core \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fonts-wqy-zenhei \
@@ -38,23 +47,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libice6 \
     libglib2.0-0 \
-    default-jre-headless \
+    libreoffice-impress \
+    mupdf-tools \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-COPY python_api/requirements.txt ./requirements.txt
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY docker/fontconfig/99-pptx2svg-fonts.conf /etc/fonts/conf.d/99-pptx2svg-fonts.conf
-COPY docker/entrypoint.sh /usr/local/bin/pptx2svg-entrypoint.sh
-COPY fonts /usr/local/share/fonts/custom
-COPY python_api/app ./app
-COPY --from=java-builder /build/java_renderer/target/pptx2svg-renderer.jar /opt/pptx2svg-renderer/pptx2svg-renderer.jar
+COPY . ./
 
-RUN chmod +x /usr/local/bin/pptx2svg-entrypoint.sh && fc-cache -fv
+RUN mkdir -p /data/jobs /usr/local/share/fonts/custom /tmp/ppt-to-svg/downloads \
+    && sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && chmod +x /app/docker-entrypoint.sh \
+    && fc-cache -f
 
-EXPOSE 8321
+ENV JOB_WORKDIR=/data/jobs \
+    MAX_CONCURRENT_JOBS=4 \
+    PPTX_MAX_CONCURRENT_JOBS=2 \
+    PPTX_JOB_TTL_SECONDS=3600 \
+    JOB_TTL_SECONDS=3600
 
-ENTRYPOINT ["/usr/local/bin/pptx2svg-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8321"]
+EXPOSE 2222
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "2222", "--workers", "1"]

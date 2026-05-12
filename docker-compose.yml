@@ -1,0 +1,31 @@
+# input: docker compose 读取本文件定义服务
+# output: 一键启动 2pptxsvg 统一API容器
+# pos: 2pptxsvg 本地/服务器编排入口
+# 一旦我被更新，务必更新我的开头注释，以及所属的文件夹README。
+services:
+  2pptxsvg-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 2pptxsvg-api
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+    environment:
+      APP_PORT: "2222"
+      WORK_ROOT: /tmp/ppt-to-svg
+      JOB_WORKDIR: /data/jobs
+      MAX_CONCURRENT_JOBS: "2"
+      PPTX_MAX_CONCURRENT_JOBS: "2"
+      JOB_TTL_SECONDS: "3600"
+      PPTX_JOB_TTL_SECONDS: "3600"
+      SVG2PPTX_CONVERT_TIMEOUT_SECONDS: "900"
+      SVG2PPTX_CUSTOM_FONT_DIR: /app/fonts
+    deploy:
+      resources:
+        limits:
+          cpus: "3.0"
+          memory: 4G
+    volumes:
+      - ./_docker_jobs:/data/jobs
+      - ./fonts:/app/fonts:ro

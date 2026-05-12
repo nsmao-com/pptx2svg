@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import shutil
 import subprocess
@@ -22,22 +23,20 @@ class ConversionError(RuntimeError):
     pass
 
 
-def get_java_command() -> str:
-    java_command = settings.java_command
-    if Path(java_command).exists():
-        return java_command
+def get_required_command(command_name: str) -> str:
+    if Path(command_name).exists():
+        return command_name
 
-    fallback = shutil.which(java_command)
+    fallback = shutil.which(command_name)
     if fallback:
         return fallback
 
-    raise ConversionError(f"Missing Java runtime executable: {java_command}")
+    raise ConversionError(f"Missing required executable: {command_name}")
 
 
 def ensure_dependencies() -> None:
-    get_java_command()
-    if not settings.java_renderer_jar.exists():
-        raise ConversionError("Missing native SVG renderer helper jar.")
+    get_required_command(settings.libreoffice_command)
+    get_required_command(settings.mupdf_command)
 
 
 def convert_ppt_url_to_svg_zip(source_url: str) -> tuple[str, bytes]:
@@ -100,24 +99,28 @@ def download_presentation(source_url: str, temp_dir: Path) -> Path:
 
 
 def render_presentation_to_svgs(input_path: Path, output_dir: Path) -> list[Path]:
-    run_command(
-        [
-            get_java_command(),
-            "-jar",
-            str(settings.java_renderer_jar),
-            "--input",
-            str(input_path),
-            "--output-dir",
-            str(output_dir),
-            "--text-as-shapes",
-            "true" if settings.svg_text_as_shapes else "false",
-        ]
-    )
+    working_dir = output_dir.parent
+    profile_dir = working_dir / "libreoffice-profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
 
-    svg_files = sorted(output_dir.glob("slide-*.svg"))
-    if not svg_files:
+    pdf_path = export_presentation_to_pdf(input_path, working_dir, profile_dir)
+    fallback_svg_dir = working_dir / "mupdf-svg"
+    fallback_svg_dir.mkdir(parents=True, exist_ok=True)
+    fallback_svg_files = render_pdf_to_svgs(pdf_path, fallback_svg_dir)
+
+    final_svg_files: list[Path] = []
+    for page_number, fallback_svg in enumerate(fallback_svg_files, start=1):
+        target_svg = output_dir / format_slide_name(page_number)
+        if export_slide_to_svg(input_path, page_number, target_svg, profile_dir):
+            final_svg_files.append(target_svg)
+            continue
+
+        shutil.copy2(fallback_svg, target_svg)
+        final_svg_files.append(target_svg)
+
+    if not final_svg_files:
         raise ConversionError("Renderer did not generate any SVG slides.")
-    return svg_files
+    return final_svg_files
 
 
 def build_zip_bytes(svg_files: Iterable[Path]) -> bytes:
@@ -146,6 +149,120 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
         details = stderr or stdout or "No command output."
         raise ConversionError(f"Command failed: {' '.join(command)}. {details}") from exc
     return result
+
+
+def export_presentation_to_pdf(input_path: Path, working_dir: Path, profile_dir: Path) -> Path:
+    export_dir = working_dir / "pdf-export"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    run_command(
+        build_libreoffice_command(
+            profile_dir,
+            [
+                "--convert-to",
+                settings.libreoffice_pdf_filter,
+                "--outdir",
+                str(export_dir),
+                str(input_path),
+            ],
+        )
+    )
+
+    exported_pdf = collect_single_output_file(export_dir, ".pdf")
+    target_pdf = working_dir / f"{input_path.stem}.pdf"
+    shutil.move(str(exported_pdf), target_pdf)
+    return target_pdf
+
+
+def render_pdf_to_svgs(pdf_path: Path, output_dir: Path) -> list[Path]:
+    run_command(
+        [
+            get_required_command(settings.mupdf_command),
+            "draw",
+            "-q",
+            "-F",
+            "svg",
+            "-o",
+            str(output_dir / "slide-%03d.svg"),
+            str(pdf_path),
+        ]
+    )
+
+    svg_files = sorted(output_dir.glob("slide-*.svg"))
+    if not svg_files:
+        raise ConversionError("MuPDF did not generate any SVG slides from PDF fallback.")
+    return svg_files
+
+
+def export_slide_to_svg(input_path: Path, page_number: int, target_svg: Path, profile_dir: Path) -> bool:
+    export_dir = target_svg.parent / f"libreoffice-svg-page-{page_number:03d}"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    filter_with_options = build_svg_filter(page_number)
+    try:
+        run_command(
+            build_libreoffice_command(
+                profile_dir,
+                [
+                    "--convert-to",
+                    filter_with_options,
+                    "--outdir",
+                    str(export_dir),
+                    str(input_path),
+                ],
+            )
+        )
+    except ConversionError:
+        return False
+
+    try:
+        exported_svg = collect_single_output_file(export_dir, ".svg")
+    except ConversionError:
+        return False
+
+    shutil.move(str(exported_svg), target_svg)
+    return target_svg.is_file() and target_svg.stat().st_size > 0
+
+
+def build_libreoffice_command(profile_dir: Path, extra_args: list[str]) -> list[str]:
+    profile_uri = profile_dir.resolve().as_uri()
+    return [
+        get_required_command(settings.libreoffice_command),
+        "--headless",
+        "--invisible",
+        "--nodefault",
+        "--nolockcheck",
+        "--nologo",
+        "--nofirststartwizard",
+        "--norestore",
+        f"-env:UserInstallation={profile_uri}",
+        *extra_args,
+    ]
+
+
+def build_svg_filter(page_number: int) -> str:
+    filter_options = json.dumps(
+        {
+            "PageNumber": {
+                "type": "long",
+                "value": str(page_number),
+            }
+        },
+        separators=(",", ":"),
+    )
+    return f"{settings.libreoffice_svg_filter}:{filter_options}"
+
+
+def collect_single_output_file(export_dir: Path, suffix: str) -> Path:
+    exported_files = sorted(path for path in export_dir.iterdir() if path.suffix.lower() == suffix)
+    if len(exported_files) != 1:
+        raise ConversionError(
+            f"Expected exactly one {suffix} file in {export_dir}, got {len(exported_files)}."
+        )
+    return exported_files[0]
+
+
+def format_slide_name(index: int) -> str:
+    return f"slide-{index:03d}.svg"
 
 
 def sanitize_filename(name: str) -> str:

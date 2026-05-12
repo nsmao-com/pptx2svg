@@ -6,6 +6,12 @@ __pycache__/
 .venv/
 dist/
 build/
+_docker_jobs/
+_jobs/
+_run/
+downloads/
+*.zip
+*.tar.gz
 python_api/java_renderer/target/
 
 fonts/*.ttf
